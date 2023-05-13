@@ -15,6 +15,16 @@ const LegacySessionAuth = require('./authStrategies/LegacySessionAuth');
 const NoAuth = require('./authStrategies/NoAuth');
 let messageQueue = Promise.resolve();
 
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Function to generate a random number between min and max (inclusive)
+function randomIntFromInterval(min, max) {
+    return Math.floor(Math.random() * (max - min + 1) + min);
+}
+
+
 /**
  * Starting point for interacting with the WhatsApp Web API
  * @extends {EventEmitter}
@@ -105,6 +115,12 @@ class Client extends EventEmitter {
             page = (await browser.pages())[0];
         }
 
+
+        if (this.options.proxyAuthentication !== undefined) {
+            await page.authenticate(this.options.proxyAuthentication);
+        }
+      
+      
         if (this.options.proxyAuthentication !== undefined) {
             await page.authenticate(this.options.proxyAuthentication);
         }
@@ -710,7 +726,7 @@ class Client extends EventEmitter {
      * @returns {Promise<Message>} Message that was just sent
      */
     async sendMessage(chatId, content, options = {}) {
-        const messagePromise = new Promise(async (resolve, reject) => {
+        const messagePromise = () => new Promise(async (resolve, reject) => {
             let internalOptions = {
                 linkPreview: options.linkPreview === false ? undefined : true,
                 sendAudioAsVoice: options.sendAudioAsVoice,
@@ -777,7 +793,16 @@ class Client extends EventEmitter {
             resolve(message);
         });
 
-        messageQueue = messageQueue.then(() => messagePromise).catch(() => {});
+        messageQueue = messageQueue
+            .then(() => delay(randomIntFromInterval(1000, 5000)))  // Wait for 2 seconds before sending the message
+            .then(messagePromise)  // Then send the message
+            .then(()=>{
+                if(this.logMessages){
+                    const now = new Date()
+                    console.log(`Bot answered | at ${now.toLocaleString()}`)
+                }
+            })
+            .catch(() => {});
         return messagePromise;
     }
 
