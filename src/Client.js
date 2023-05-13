@@ -13,6 +13,7 @@ const ContactFactory = require('./factories/ContactFactory');
 const { ClientInfo, Message, MessageMedia, Contact, Location, GroupNotification, Label, Call, Buttons, List, Reaction, Chat } = require('./structures');
 const LegacySessionAuth = require('./authStrategies/LegacySessionAuth');
 const NoAuth = require('./authStrategies/NoAuth');
+let messageQueue = Promise.resolve();
 
 /**
  * Starting point for interacting with the WhatsApp Web API
@@ -709,70 +710,75 @@ class Client extends EventEmitter {
      * @returns {Promise<Message>} Message that was just sent
      */
     async sendMessage(chatId, content, options = {}) {
-        let internalOptions = {
-            linkPreview: options.linkPreview === false ? undefined : true,
-            sendAudioAsVoice: options.sendAudioAsVoice,
-            sendVideoAsGif: options.sendVideoAsGif,
-            sendMediaAsSticker: options.sendMediaAsSticker,
-            sendMediaAsDocument: options.sendMediaAsDocument,
-            caption: options.caption,
-            quotedMessageId: options.quotedMessageId,
-            parseVCards: options.parseVCards === false ? false : true,
-            mentionedJidList: Array.isArray(options.mentions) ? options.mentions.map(contact => contact.id._serialized) : [],
-            extraOptions: options.extra
-        };
+        const messagePromise = new Promise(async (resolve, reject) => {
+            let internalOptions = {
+                linkPreview: options.linkPreview === false ? undefined : true,
+                sendAudioAsVoice: options.sendAudioAsVoice,
+                sendVideoAsGif: options.sendVideoAsGif,
+                sendMediaAsSticker: options.sendMediaAsSticker,
+                sendMediaAsDocument: options.sendMediaAsDocument,
+                caption: options.caption,
+                quotedMessageId: options.quotedMessageId,
+                parseVCards: options.parseVCards === false ? false : true,
+                mentionedJidList: Array.isArray(options.mentions) ? options.mentions.map(contact => contact.id._serialized) : [],
+                extraOptions: options.extra
+            };
 
-        const sendSeen = typeof options.sendSeen === 'undefined' ? true : options.sendSeen;
+            const sendSeen = typeof options.sendSeen === 'undefined' ? true : options.sendSeen;
 
-        if (content instanceof MessageMedia) {
-            internalOptions.attachment = content;
-            content = '';
-        } else if (options.media instanceof MessageMedia) {
-            internalOptions.attachment = options.media;
-            internalOptions.caption = content;
-            content = '';
-        } else if (content instanceof Location) {
-            internalOptions.location = content;
-            content = '';
-        } else if (content instanceof Contact) {
-            internalOptions.contactCard = content.id._serialized;
-            content = '';
-        } else if (Array.isArray(content) && content.length > 0 && content[0] instanceof Contact) {
-            internalOptions.contactCardList = content.map(contact => contact.id._serialized);
-            content = '';
-        } else if (content instanceof Buttons) {
-            if (content.type !== 'chat') { internalOptions.attachment = content.body; }
-            internalOptions.buttons = content;
-            content = '';
-        } else if (content instanceof List) {
-            internalOptions.list = content;
-            content = '';
-        }
-        
-        if (internalOptions.sendMediaAsSticker && internalOptions.attachment) {
-            internalOptions.attachment = await Util.formatToWebpSticker(
-                internalOptions.attachment, {
-                    name: options.stickerName,
-                    author: options.stickerAuthor,
-                    categories: options.stickerCategories
-                }, this.pupPage
-            );
-        }
-
-        const newMessage = await this.pupPage.evaluate(async (chatId, message, options, sendSeen) => {
-            const chatWid = window.Store.WidFactory.createWid(chatId);
-            const chat = await window.Store.Chat.find(chatWid);
-
-
-            if (sendSeen) {
-                window.WWebJS.sendSeen(chatId);
+            if (content instanceof MessageMedia) {
+                internalOptions.attachment = content;
+                content = '';
+            } else if (options.media instanceof MessageMedia) {
+                internalOptions.attachment = options.media;
+                internalOptions.caption = content;
+                content = '';
+            } else if (content instanceof Location) {
+                internalOptions.location = content;
+                content = '';
+            } else if (content instanceof Contact) {
+                internalOptions.contactCard = content.id._serialized;
+                content = '';
+            } else if (Array.isArray(content) && content.length > 0 && content[0] instanceof Contact) {
+                internalOptions.contactCardList = content.map(contact => contact.id._serialized);
+                content = '';
+            } else if (content instanceof Buttons) {
+                if (content.type !== 'chat') { internalOptions.attachment = content.body; }
+                internalOptions.buttons = content;
+                content = '';
+            } else if (content instanceof List) {
+                internalOptions.list = content;
+                content = '';
+            }
+            
+            if (internalOptions.sendMediaAsSticker && internalOptions.attachment) {
+                internalOptions.attachment = await Util.formatToWebpSticker(
+                    internalOptions.attachment, {
+                        name: options.stickerName,
+                        author: options.stickerAuthor,
+                        categories: options.stickerCategories
+                    }, this.pupPage
+                );
             }
 
-            const msg = await window.WWebJS.sendMessage(chat, message, options, sendSeen);
-            return msg.serialize();
-        }, chatId, content, internalOptions, sendSeen);
+            const newMessage = await this.pupPage.evaluate(async (chatId, message, options, sendSeen) => {
+                const chatWid = window.Store.WidFactory.createWid(chatId);
+                const chat = await window.Store.Chat.find(chatWid);
 
-        return new Message(this, newMessage);
+
+                if (sendSeen) {
+                    window.WWebJS.sendSeen(chatId);
+                }
+
+                const msg = await window.WWebJS.sendMessage(chat, message, options, sendSeen);
+                return msg.serialize();
+            }, chatId, content, internalOptions, sendSeen);
+            const message = new Message(this, newMessage);
+            resolve(message);
+        });
+
+        messageQueue = messageQueue.then(() => messagePromise).catch(() => {});
+        return messagePromise;
     }
 
     /**
