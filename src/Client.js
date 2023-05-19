@@ -24,6 +24,25 @@ function randomIntFromInterval(min, max) {
     return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
+// Function to add a timeout to a promise
+function withTimeout(ms, promise) {
+    return new Promise((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+            reject(new Error('Promise timed out'));
+        }, ms);
+        promise.then(
+            (res) => {
+                clearTimeout(timeoutId);
+                resolve(res);
+            },
+            (err) => {
+                clearTimeout(timeoutId);
+                reject(err);
+            }
+        );
+    })
+}
+
 
 /**
  * Starting point for interacting with the WhatsApp Web API
@@ -794,15 +813,15 @@ class Client extends EventEmitter {
         });
 
         messageQueue = messageQueue
-            .then(() => delay(randomIntFromInterval(1000, 5000)))  // Wait for 2 seconds before sending the message
-            .then(messagePromise)  // Then send the message
+            .then(() => delay(randomIntFromInterval(2000, 8000)))  // Wait for 2 seconds before sending the message
+            .then(() => withTimeout(15000, messagePromise()))  // Send the message with a timeout of 15 seconds
             .then(()=>{
                 if(this.logMessages){
                     const now = new Date()
                     console.log(`Bot answered | at ${now.toLocaleString()}`)
                 }
             })
-            .catch(() => {});
+            .catch(console.error);
         return messagePromise;
     }
 
