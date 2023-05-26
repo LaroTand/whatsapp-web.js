@@ -813,7 +813,7 @@ class Client extends EventEmitter {
         });
 
         messageQueue = messageQueue
-            .then(() => delay(randomIntFromInterval(2000, 8000)))  // Wait for 2 seconds before sending the message
+            .then(() => delay(randomIntFromInterval(3000, 30000)))  // Wait for 2 seconds before sending the message
             .then(() => withTimeout(15000, messagePromise()))  // Send the message with a timeout of 15 seconds
             .then(()=>{
                 if(this.logMessages){
