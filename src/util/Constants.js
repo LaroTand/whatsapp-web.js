@@ -1,6 +1,6 @@
 'use strict';
 
-exports.WhatsWebURL = 'https://web.whatsapp.com/';
+exports.WhatsWebURL = 'https://web.whatsapp.com/nl/';
 
 exports.DefaultOptions = {
     puppeteer: {
