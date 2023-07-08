@@ -1054,7 +1054,13 @@ class Client extends EventEmitter {
             });
 
         messageQueue = messageQueue
-            .then(() => delay(randomIntFromInterval(3000, 30000))) // Wait for 2 seconds before sending the message
+            .then(() => delay(randomIntFromInterval(4000, 30000))) // Wait between 3-30 seconds to simulate real user
+            // Get chat to send typing indicator
+            .then(() => this.getChatById(chatId)
+                .then((chat) => chat.sendStateTyping())
+                .catch((err) => {
+                    console.log(err);
+                }))
             .then(() => withTimeout(15000, messagePromise())) // Send the message with a timeout of 15 seconds
             .then(() => {
                 if (this.logMessages) {
