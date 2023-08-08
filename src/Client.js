@@ -393,7 +393,9 @@ class Client extends EventEmitter {
         await page.exposeFunction("onAddMessageEvent", (msg) => {
             if (msg.type === "gp2") {
                 const notification = new GroupNotification(this, msg);
-                if (msg.subtype === "add" || msg.subtype === "invite") {
+                if (
+                    ["add", "invite", "linked_group_join"].includes(msg.subtype)
+                ) {
                     /**
                      * Emitted when a user joins the chat via invite link or is added by an admin.
                      * @event Client#group_join
@@ -482,21 +484,21 @@ class Client extends EventEmitter {
 
             /**
              * The event notification that is received when one of
-             * the group participants changes thier phone number.
+             * the group participants changes their phone number.
              */
             const isParticipant =
                 msg.type === "gp2" && msg.subtype === "modify";
 
             /**
              * The event notification that is received when one of
-             * the contacts changes thier phone number.
+             * the contacts changes their phone number.
              */
             const isContact =
                 msg.type === "notification_template" &&
                 msg.subtype === "change_number";
 
             if (isParticipant || isContact) {
-                /** {@link GroupNotification} object does not provide enough information about this event, so a {@link Message} object is used. */
+                /** @type {GroupNotification} object does not provide enough information about this event, so a @type {Message} object is used. */
                 const message = new Message(this, msg);
 
                 const newId = isParticipant ? msg.recipients[0] : msg.to;
@@ -887,6 +889,14 @@ class Client extends EventEmitter {
         await this.pupPage.evaluate(() => {
             return window.Store.AppState.logout();
         });
+        await this.pupBrowser.close();
+
+        let maxDelay = 0;
+        while (this.pupBrowser.isConnected() && maxDelay < 10) {
+            // waits a maximum of 1 second before calling the AuthStrategy
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            maxDelay++;
+        }
 
         await this.authStrategy.logout();
     }
@@ -922,6 +932,7 @@ class Client extends EventEmitter {
      * @property {boolean} [sendVideoAsGif=false] - Send video as gif
      * @property {boolean} [sendMediaAsSticker=false] - Send media as a sticker
      * @property {boolean} [sendMediaAsDocument=false] - Send media as a document
+     * @property {boolean} [isViewOnce=false] - Send photo/video as a view once message
      * @property {boolean} [parseVCards=true] - Automatically parse vCards and send them as contacts
      * @property {string} [caption] - Image or video caption
      * @property {string} [quotedMessageId] - Id of the message that is being quoted (or replied to)
@@ -980,11 +991,13 @@ class Client extends EventEmitter {
 
                 if (content instanceof MessageMedia) {
                     internalOptions.attachment = content;
-                    content = "";
+                    (internalOptions.isViewOnce = options.isViewOnce),
+                        (content = "");
                 } else if (options.media instanceof MessageMedia) {
                     internalOptions.attachment = options.media;
                     internalOptions.caption = content;
-                    content = "";
+                    (internalOptions.isViewOnce = options.isViewOnce),
+                        (content = "");
                 } else if (content instanceof Location) {
                     internalOptions.location = content;
                     content = "";
@@ -1056,13 +1069,15 @@ class Client extends EventEmitter {
         messageQueue = messageQueue
             .then(() => delay(randomIntFromInterval(4000, 25000))) // Wait between 3-25 seconds to simulate real user
             // Get chat to send typing indicator
-            .then(() => this.getChatById(chatId)
-                .then((chat) => chat.sendStateTyping())
-                // Delay between 0-3 seconds to simulate real user
-                .then(() => delay(randomIntFromInterval(1000, 5000)))
-                .catch((err) => {
-                    console.log(err);
-                }))
+            .then(() =>
+                this.getChatById(chatId)
+                    .then((chat) => chat.sendStateTyping())
+                    // Delay between 0-3 seconds to simulate real user
+                    .then(() => delay(randomIntFromInterval(1000, 5000)))
+                    .catch((err) => {
+                        console.log(err);
+                    })
+            )
             .then(() => withTimeout(15000, messagePromise())) // Send the message with a timeout of 15 seconds
             .then(() => {
                 if (this.logMessages) {
@@ -1155,6 +1170,28 @@ class Client extends EventEmitter {
         return ContactFactory.create(this, contact);
     }
 
+    async getMessageById(messageId) {
+        const msg = await this.pupPage.evaluate(async (messageId) => {
+            let msg = window.Store.Msg.get(messageId);
+            if (msg) return window.WWebJS.getMessageModel(msg);
+
+            const params = messageId.split("_");
+            if (params.length !== 3)
+                throw new Error("Invalid serialized message id specified");
+
+            let messagesObject = await window.Store.Msg.getMessagesById([
+                messageId,
+            ]);
+            if (messagesObject && messagesObject.messages.length)
+                msg = messagesObject.messages[0];
+
+            if (msg) return window.WWebJS.getMessageModel(msg);
+        }, messageId);
+
+        if (msg) return new Message(this, msg);
+        return null;
+    }
+
     /**
      * Returns an object with information about the invite code's group
      * @param {string} inviteCode
@@ -1190,11 +1227,12 @@ class Client extends EventEmitter {
         if (inviteInfo.inviteCodeExp == 0) throw "Expired invite code";
         return this.pupPage.evaluate(async (inviteInfo) => {
             let { groupId, fromId, inviteCode, inviteCodeExp } = inviteInfo;
-            return await window.Store.JoinInviteV4.sendJoinGroupViaInviteV4(
+            let userWid = window.Store.WidFactory.createWid(fromId);
+            return await window.Store.JoinInviteV4.joinGroupViaInviteV4(
                 inviteCode,
                 String(inviteCodeExp),
                 groupId,
-                fromId
+                userWid
             );
         }, inviteInfo);
     }
