@@ -1111,13 +1111,13 @@ class Client extends EventEmitter {
             });
 
         messageQueue = messageQueue
-            .then(() => delay(randomIntFromInterval(5000, 30000))) // Wait between 5-30 seconds to simulate real user
+            .then(() => delay(randomIntFromInterval(10000, 40000))) // Wait between 10-30 seconds to simulate real user
             // Get chat to send typing indicator
             .then(() =>
                 this.getChatById(chatId)
                     .then((chat) => chat.sendStateTyping())
                     // Delay between 0-3 seconds to simulate real user
-                    .then(() => delay(randomIntFromInterval(1000, 5000)))
+                    .then(() => delay(randomIntFromInterval(5000, 10000)))
                     .catch((err) => {
                         console.log(err);
                     })
