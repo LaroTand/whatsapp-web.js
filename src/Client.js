@@ -44,16 +44,7 @@ function withTimeout(ms, promise) {
         );
     });
 }
-const Util = require('./util/Util');
-const InterfaceController = require('./util/InterfaceController');
-const { WhatsWebURL, DefaultOptions, Events, WAState } = require('./util/Constants');
-const { ExposeStore, LoadUtils } = require('./util/Injected');
-const ChatFactory = require('./factories/ChatFactory');
-const ContactFactory = require('./factories/ContactFactory');
-const WebCacheFactory = require('./webCache/WebCacheFactory');
-const { ClientInfo, Message, MessageMedia, Contact, Location, Poll, GroupNotification, Label, Call, Buttons, List, Reaction } = require('./structures');
-const LegacySessionAuth = require('./authStrategies/LegacySessionAuth');
-const NoAuth = require('./authStrategies/NoAuth');
+
 
 /**
  * Starting point for interacting with the WhatsApp Web API
