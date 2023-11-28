@@ -731,25 +731,6 @@ class Client extends EventEmitter {
         });
 
         await page.exposeFunction(
-            "onArchiveChatEvent",
-            (chat, currState, prevState) => {
-                /**
-                 * Emitted when a chat is archived/unarchived
-                 * @event Client#chat_archived
-                 * @param {Chat} chat
-                 * @param {boolean} currState
-                 * @param {boolean} prevState
-                 */
-                this.emit(
-                    Events.CHAT_ARCHIVED,
-                    new Chat(this, chat),
-                    currState,
-                    prevState
-                );
-            }
-        );
-
-        await page.exposeFunction(
             "onEditMessageEvent",
             (msg, newBody, prevBody) => {
                 if (msg.type === "revoked") {
