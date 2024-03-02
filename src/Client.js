@@ -4,16 +4,34 @@ const EventEmitter = require("events");
 const puppeteer = require("puppeteer");
 const moduleRaid = require("@pedroslopez/moduleraid/moduleraid");
 
-const Util = require('./util/Util');
-const InterfaceController = require('./util/InterfaceController');
-const { WhatsWebURL, DefaultOptions, Events, WAState } = require('./util/Constants');
-const { ExposeStore, LoadUtils } = require('./util/Injected');
-const ChatFactory = require('./factories/ChatFactory');
-const ContactFactory = require('./factories/ContactFactory');
-const WebCacheFactory = require('./webCache/WebCacheFactory');
-const { ClientInfo, Message, MessageMedia, Contact, Location, Poll, GroupNotification, Label, Call, Buttons, List, Reaction } = require('./structures');
-const LegacySessionAuth = require('./authStrategies/LegacySessionAuth');
-const NoAuth = require('./authStrategies/NoAuth');
+const Util = require("./util/Util");
+const InterfaceController = require("./util/InterfaceController");
+const {
+    WhatsWebURL,
+    DefaultOptions,
+    Events,
+    WAState,
+} = require("./util/Constants");
+const { ExposeStore, LoadUtils } = require("./util/Injected");
+const ChatFactory = require("./factories/ChatFactory");
+const ContactFactory = require("./factories/ContactFactory");
+const WebCacheFactory = require("./webCache/WebCacheFactory");
+const {
+    ClientInfo,
+    Message,
+    MessageMedia,
+    Contact,
+    Location,
+    Poll,
+    GroupNotification,
+    Label,
+    Call,
+    Buttons,
+    List,
+    Reaction,
+} = require("./structures");
+const LegacySessionAuth = require("./authStrategies/LegacySessionAuth");
+const NoAuth = require("./authStrategies/NoAuth");
 
 let messageQueue = Promise.resolve();
 
@@ -45,7 +63,6 @@ function withTimeout(ms, promise) {
     });
 }
 
-
 /**
  * Starting point for interacting with the WhatsApp Web API
  * @extends {EventEmitter}
@@ -61,7 +78,7 @@ function withTimeout(ms, promise) {
  * @param {number} options.takeoverOnConflict - If another whatsapp web session is detected (another browser), take over the session in the current browser
  * @param {number} options.takeoverTimeoutMs - How much time to wait before taking over the session
  * @param {string} options.userAgent - User agent to use in puppeteer
- * @param {string} options.ffmpegPath - Ffmpeg path to use when formating videos to webp while sending stickers
+ * @param {string} options.ffmpegPath - Ffmpeg path to use when formatting videos to webp while sending stickers
  * @param {boolean} options.bypassCSP - Sets bypassing of page's Content-Security-Policy.
  * @param {object} options.proxyAuthentication - Proxy Authentication object.
  *
@@ -74,6 +91,8 @@ function withTimeout(ms, promise) {
  * @fires Client#message_create
  * @fires Client#message_revoke_me
  * @fires Client#message_revoke_everyone
+ * @fires Client#message_ciphertext
+ * @fires Client#message_edit
  * @fires Client#media_uploaded
  * @fires Client#group_join
  * @fires Client#group_leave
@@ -134,6 +153,8 @@ class Client extends EventEmitter {
             if (!browserArgs.find((arg) => arg.includes("--user-agent"))) {
                 browserArgs.push(`--user-agent=${this.options.userAgent}`);
             }
+            // navigator.webdriver fix
+            browserArgs.push("--disable-blink-features=AutomationControlled");
 
             browser = await puppeteer.launch({
                 ...puppeteerOpts,
@@ -158,6 +179,21 @@ class Client extends EventEmitter {
 
         await this.authStrategy.afterBrowserInitialized();
         await this.initWebVersionCache();
+
+        // ocVesion (isOfficialClient patch)
+        await page.evaluateOnNewDocument(() => {
+            const originalError = Error;
+            //eslint-disable-next-line no-global-assign
+            Error = function (message) {
+                const error = new originalError(message);
+                const originalStack = error.stack;
+                if (error.stack.includes("moduleRaid"))
+                    error.stack =
+                        originalStack +
+                        "\n    at https://web.whatsapp.com/vendors~lazy_loaded_low_priority_components.05e98054dbd60f980427.js:2:44";
+                return error;
+            };
+        });
 
         await page.goto(WhatsWebURL, {
             waitUntil: "load",
@@ -211,8 +247,8 @@ class Client extends EventEmitter {
             }
         );
 
-        const INTRO_IMG_SELECTOR = '[data-icon=\'search\']';
-        const INTRO_QRCODE_SELECTOR = 'div[data-ref] canvas';
+        const INTRO_IMG_SELECTOR = "[data-icon='search']";
+        const INTRO_QRCODE_SELECTOR = "div[data-ref] canvas";
 
         // Checks which selector appears first
         const needAuthentication = await Promise.race([
@@ -340,38 +376,49 @@ class Client extends EventEmitter {
              * @returns {boolean} Boolean value that indicates the result of the comparison
              */
             window.compareWwebVersions = (lOperand, operator, rOperand) => {
-                if (!['>', '>=', '<', '<=', '='].includes(operator)) {
-                    throw new class _ extends Error {
-                        constructor(m) { super(m); this.name = 'CompareWwebVersionsError'; }
-                    }('Invalid comparison operator is provided');
-
+                if (![">", ">=", "<", "<=", "="].includes(operator)) {
+                    throw new (class _ extends Error {
+                        constructor(m) {
+                            super(m);
+                            this.name = "CompareWwebVersionsError";
+                        }
+                    })("Invalid comparison operator is provided");
                 }
-                if (typeof lOperand !== 'string' || typeof rOperand !== 'string') {
-                    throw new class _ extends Error {
-                        constructor(m) { super(m); this.name = 'CompareWwebVersionsError'; }
-                    }('A non-string WWeb version type is provided');
+                if (
+                    typeof lOperand !== "string" ||
+                    typeof rOperand !== "string"
+                ) {
+                    throw new (class _ extends Error {
+                        constructor(m) {
+                            super(m);
+                            this.name = "CompareWwebVersionsError";
+                        }
+                    })("A non-string WWeb version type is provided");
                 }
 
-                lOperand = lOperand.replace(/-beta$/, '');
-                rOperand = rOperand.replace(/-beta$/, '');
+                lOperand = lOperand.replace(/-beta$/, "");
+                rOperand = rOperand.replace(/-beta$/, "");
 
                 while (lOperand.length !== rOperand.length) {
                     lOperand.length > rOperand.length
-                        ? rOperand = rOperand.concat('0')
-                        : lOperand = lOperand.concat('0');
+                        ? (rOperand = rOperand.concat("0"))
+                        : (lOperand = lOperand.concat("0"));
                 }
 
-                lOperand = Number(lOperand.replace(/\./g, ''));
-                rOperand = Number(rOperand.replace(/\./g, ''));
+                lOperand = Number(lOperand.replace(/\./g, ""));
+                rOperand = Number(rOperand.replace(/\./g, ""));
 
-                return (
-                    operator === '>' ? lOperand > rOperand :
-                        operator === '>=' ? lOperand >= rOperand :
-                            operator === '<' ? lOperand < rOperand :
-                                operator === '<=' ? lOperand <= rOperand :
-                                    operator === '=' ? lOperand === rOperand :
-                                        false
-                );
+                return operator === ">"
+                    ? lOperand > rOperand
+                    : operator === ">="
+                    ? lOperand >= rOperand
+                    : operator === "<"
+                    ? lOperand < rOperand
+                    : operator === "<="
+                    ? lOperand <= rOperand
+                    : operator === "="
+                    ? lOperand === rOperand
+                    : false;
             };
         });
 
@@ -450,7 +497,7 @@ class Client extends EventEmitter {
                      * @param {GroupNotification} notification GroupNotification with more information about the action
                      */
                     this.emit(Events.GROUP_ADMIN_CHANGED, notification);
-                } else if (msg.subtype === 'created_membership_requests') {
+                } else if (msg.subtype === "created_membership_requests") {
                     /**
                      * Emitted when some user requested to join the group
                      * that has the membership approval mode turned on
@@ -706,7 +753,7 @@ class Client extends EventEmitter {
             }
         });
 
-        await page.exposeFunction('onRemoveChatEvent', async (chat) => {
+        await page.exposeFunction("onRemoveChatEvent", async (chat) => {
             const _chat = await this.getChatById(chat.id);
 
             /**
@@ -716,19 +763,22 @@ class Client extends EventEmitter {
              */
             this.emit(Events.CHAT_REMOVED, _chat);
         });
-        
-        await page.exposeFunction('onArchiveChatEvent', async (chat, currState, prevState) => {
-            const _chat = await this.getChatById(chat.id);
-            
-            /**
-             * Emitted when a chat is archived/unarchived
-             * @event Client#chat_archived
-             * @param {Chat} chat
-             * @param {boolean} currState
-             * @param {boolean} prevState
-             */
-            this.emit(Events.CHAT_ARCHIVED, _chat, currState, prevState);
-        });
+
+        await page.exposeFunction(
+            "onArchiveChatEvent",
+            async (chat, currState, prevState) => {
+                const _chat = await this.getChatById(chat.id);
+
+                /**
+                 * Emitted when a chat is archived/unarchived
+                 * @event Client#chat_archived
+                 * @param {Chat} chat
+                 * @param {boolean} currState
+                 * @param {boolean} prevState
+                 */
+                this.emit(Events.CHAT_ARCHIVED, _chat, currState, prevState);
+            }
+        );
 
         await page.exposeFunction(
             "onEditMessageEvent",
@@ -751,6 +801,15 @@ class Client extends EventEmitter {
                 );
             }
         );
+
+        await page.exposeFunction("onAddMessageCiphertextEvent", (msg) => {
+            /**
+             * Emitted when messages are edited
+             * @event Client#message_ciphertext
+             * @param {Message} message
+             */
+            this.emit(Events.MESSAGE_CIPHERTEXT, new Message(this, msg));
+        });
 
         await page.evaluate(() => {
             window.Store.Msg.on("change", (msg) => {
@@ -779,13 +838,16 @@ class Client extends EventEmitter {
                         window.WWebJS.getMessageModel(msg)
                     );
             });
-            window.Store.Msg.on("change:body", (msg, newBody, prevBody) => {
-                window.onEditMessageEvent(
-                    window.WWebJS.getMessageModel(msg),
-                    newBody,
-                    prevBody
-                );
-            });
+            window.Store.Msg.on(
+                "change:body change:caption",
+                (msg, newBody, prevBody) => {
+                    window.onEditMessageEvent(
+                        window.WWebJS.getMessageModel(msg),
+                        newBody,
+                        prevBody
+                    );
+                }
+            );
             window.Store.AppState.on("change:state", (_AppState, state) => {
                 window.onAppStateChangedEvent(state);
             });
@@ -818,6 +880,9 @@ class Client extends EventEmitter {
                             window.onAddMessageEvent(
                                 window.WWebJS.getMessageModel(_msg)
                             )
+                        );
+                        window.onAddMessageCiphertextEvent(
+                            window.WWebJS.getMessageModel(msg)
                         );
                     } else {
                         window.onAddMessageEvent(
@@ -960,6 +1025,13 @@ class Client extends EventEmitter {
     }
 
     /**
+     * An object representing mentions of groups
+     * @typedef {Object} GroupMention
+     * @property {string} subject - The name of a group to mention (can be custom)
+     * @property {string} id - The group ID, e.g.: 'XXXXXXXXXX@g.us'
+     */
+
+    /**
      * Message options.
      * @typedef {Object} MessageSendOptions
      * @property {boolean} [linkPreview=true] - Show links preview. Has no effect on multi-device accounts.
@@ -971,7 +1043,8 @@ class Client extends EventEmitter {
      * @property {boolean} [parseVCards=true] - Automatically parse vCards and send them as contacts
      * @property {string} [caption] - Image or video caption
      * @property {string} [quotedMessageId] - Id of the message that is being quoted (or replied to)
-     * @property {Contact[]} [mentions] - Contacts that are being mentioned in the message
+     * @property {GroupMention[]} [groupMentions] - An array of object that handle group mentions
+     * @property {string[]} [mentions] - User IDs to mention in the message
      * @property {boolean} [sendSeen=true] - Mark the conversation as seen after sending the message
      * @property {string} [stickerAuthor=undefined] - Sets the author of the sticker, (if sendMediaAsSticker is true).
      * @property {string} [stickerName=undefined] - Sets the name of the sticker, (if sendMediaAsSticker is true).
@@ -990,6 +1063,28 @@ class Client extends EventEmitter {
     async sendMessage(chatId, content, options = {}) {
         const messagePromise = () =>
             new Promise(async (resolve, reject) => {
+                if (options.mentions) {
+                    !Array.isArray(options.mentions) &&
+                        (options.mentions = [options.mentions]);
+                    if (
+                        options.mentions.some(
+                            (possiblyContact) =>
+                                possiblyContact instanceof Contact
+                        )
+                    ) {
+                        console.warn(
+                            "Mentions with an array of Contact are now deprecated. See more at https://github.com/pedroslopez/whatsapp-web.js/pull/2166."
+                        );
+                        options.mentions = options.mentions.map(
+                            (a) => a.id._serialized
+                        );
+                    }
+                }
+
+                options.groupMentions &&
+                    !Array.isArray(options.groupMentions) &&
+                    (options.groupMentions = [options.groupMentions]);
+
                 let internalOptions = {
                     linkPreview:
                         options.linkPreview === false ? undefined : true,
@@ -1000,59 +1095,53 @@ class Client extends EventEmitter {
                     caption: options.caption,
                     quotedMessageId: options.quotedMessageId,
                     parseVCards: options.parseVCards === false ? false : true,
-                    mentionedJidList: Array.isArray(options.mentions)
-                        ? options.mentions
-                        : [],
+                    mentionedJidList: options.mentions || [],
+                    groupMentions: options.groupMentions,
                     extraOptions: options.extra,
                 };
-                if (
-                    options.mentions &&
-                    options.mentions.some(
-                        (possiblyContact) => possiblyContact instanceof Contact
-                    )
-                ) {
-                    console.warn(
-                        "Mentions with an array of Contact are now deprecated. See more at https://github.com/pedroslopez/whatsapp-web.js/pull/2166."
-                    );
-                    options.mentions = options.mentions.map(
-                        (a) => a.id._serialized
-                    );
-                }
 
                 const sendSeen =
                     typeof options.sendSeen === "undefined"
                         ? true
                         : options.sendSeen;
 
-        if (content instanceof MessageMedia) {
-            internalOptions.attachment = content;
-            internalOptions.isViewOnce = options.isViewOnce,
-            content = '';
-        } else if (options.media instanceof MessageMedia) {
-            internalOptions.attachment = options.media;
-            internalOptions.caption = content;
-            internalOptions.isViewOnce = options.isViewOnce,
-            content = '';
-        } else if (content instanceof Location) {
-            internalOptions.location = content;
-            content = '';
-        } else if (content instanceof Poll) {
-            internalOptions.poll = content;
-            content = '';
-        } else if (content instanceof Contact) {
-            internalOptions.contactCard = content.id._serialized;
-            content = '';
-        } else if (Array.isArray(content) && content.length > 0 && content[0] instanceof Contact) {
-            internalOptions.contactCardList = content.map(contact => contact.id._serialized);
-            content = '';
-        } else if (content instanceof Buttons) {
-            if (content.type !== 'chat') { internalOptions.attachment = content.body; }
-            internalOptions.buttons = content;
-            content = '';
-        } else if (content instanceof List) {
-            internalOptions.list = content;
-            content = '';
-        }
+                if (content instanceof MessageMedia) {
+                    internalOptions.attachment = content;
+                    (internalOptions.isViewOnce = options.isViewOnce),
+                        (content = "");
+                } else if (options.media instanceof MessageMedia) {
+                    internalOptions.attachment = options.media;
+                    internalOptions.caption = content;
+                    (internalOptions.isViewOnce = options.isViewOnce),
+                        (content = "");
+                } else if (content instanceof Location) {
+                    internalOptions.location = content;
+                    content = "";
+                } else if (content instanceof Poll) {
+                    internalOptions.poll = content;
+                    content = "";
+                } else if (content instanceof Contact) {
+                    internalOptions.contactCard = content.id._serialized;
+                    content = "";
+                } else if (
+                    Array.isArray(content) &&
+                    content.length > 0 &&
+                    content[0] instanceof Contact
+                ) {
+                    internalOptions.contactCardList = content.map(
+                        (contact) => contact.id._serialized
+                    );
+                    content = "";
+                } else if (content instanceof Buttons) {
+                    if (content.type !== "chat") {
+                        internalOptions.attachment = content.body;
+                    }
+                    internalOptions.buttons = content;
+                    content = "";
+                } else if (content instanceof List) {
+                    internalOptions.list = content;
+                    content = "";
+                }
 
                 if (
                     internalOptions.sendMediaAsSticker &&
@@ -1078,14 +1167,13 @@ class Client extends EventEmitter {
                         if (sendSeen) {
                             window.WWebJS.sendSeen(chatId);
                         }
-
                         const msg = await window.WWebJS.sendMessage(
                             chat,
                             message,
                             options,
                             sendSeen
                         );
-                        return msg.serialize();
+                        return window.WWebJS.getMessageModel(msg);
                     },
                     chatId,
                     content,
@@ -1228,7 +1316,7 @@ class Client extends EventEmitter {
      * @returns {Promise<object>} Invite information
      */
     async getInviteInfo(inviteCode) {
-        return await this.pupPage.evaluate(inviteCode => {
+        return await this.pupPage.evaluate((inviteCode) => {
             return window.Store.GroupInvite.queryGroupInvite(inviteCode);
         }, inviteCode);
     }
@@ -1239,8 +1327,10 @@ class Client extends EventEmitter {
      * @returns {Promise<string>} Id of the joined Chat
      */
     async acceptInvite(inviteCode) {
-        const res = await this.pupPage.evaluate(async inviteCode => {
-            return await window.Store.GroupInvite.joinGroupViaInvite(inviteCode);
+        const res = await this.pupPage.evaluate(async (inviteCode) => {
+            return await window.Store.GroupInvite.joinGroupViaInvite(
+                inviteCode
+            );
         }, inviteCode);
 
         return res.gid._serialized;
@@ -1258,7 +1348,12 @@ class Client extends EventEmitter {
         return this.pupPage.evaluate(async (inviteInfo) => {
             let { groupId, fromId, inviteCode, inviteCodeExp } = inviteInfo;
             let userWid = window.Store.WidFactory.createWid(fromId);
-            return await window.Store.GroupInviteV4.joinGroupViaInviteV4(inviteCode, String(inviteCodeExp), groupId, userWid);
+            return await window.Store.GroupInviteV4.joinGroupViaInviteV4(
+                inviteCode,
+                String(inviteCodeExp),
+                groupId,
+                userWid
+            );
         }, inviteInfo);
     }
 
@@ -1282,7 +1377,7 @@ class Client extends EventEmitter {
         const couldSet = await this.pupPage.evaluate(async (displayName) => {
             if (!window.Store.Conn.canSetMyPushname()) return false;
 
-            if(window.Store.MDBackend) {
+            if (window.Store.MDBackend) {
                 await window.Store.Settings.setPushname(displayName);
                 return true;
             } else {
@@ -1580,79 +1675,111 @@ class Client extends EventEmitter {
      */
     async createGroup(title, participants = [], options = {}) {
         !Array.isArray(participants) && (participants = [participants]);
-        participants.map(p => (p instanceof Contact) ? p.id._serialized : p);
+        participants.map((p) => (p instanceof Contact ? p.id._serialized : p));
 
-        return await this.pupPage.evaluate(async (title, participants, options) => {
-            const { messageTimer = 0, parentGroupId, autoSendInviteV4 = true, comment = '' } = options;
-            const participantData = {}, participantWids = [], failedParticipants = [];
-            let createGroupResult, parentGroupWid;
+        return await this.pupPage.evaluate(
+            async (title, participants, options) => {
+                const {
+                    messageTimer = 0,
+                    parentGroupId,
+                    autoSendInviteV4 = true,
+                    comment = "",
+                } = options;
+                const participantData = {},
+                    participantWids = [],
+                    failedParticipants = [];
+                let createGroupResult, parentGroupWid;
 
-            const addParticipantResultCodes = {
-                default: 'An unknown error occupied while adding a participant',
-                200: 'The participant was added successfully',
-                403: 'The participant can be added by sending private invitation only',
-                404: 'The phone number is not registered on WhatsApp'
-            };
+                const addParticipantResultCodes = {
+                    default:
+                        "An unknown error occupied while adding a participant",
+                    200: "The participant was added successfully",
+                    403: "The participant can be added by sending private invitation only",
+                    404: "The phone number is not registered on WhatsApp",
+                };
 
-            for (const participant of participants) {
-                const pWid = window.Store.WidFactory.createWid(participant);
-                if ((await window.Store.QueryExist(pWid))?.wid) participantWids.push(pWid);
-                else failedParticipants.push(participant);
-            }
-
-            parentGroupId && (parentGroupWid = window.Store.WidFactory.createWid(parentGroupId));
-
-            try {
-                createGroupResult = await window.Store.GroupUtils.createGroup(
-                    title,
-                    participantWids,
-                    messageTimer,
-                    parentGroupWid
-                );
-            } catch (err) {
-                return 'CreateGroupError: An unknown error occupied while creating a group';
-            }
-
-            for (const participant of createGroupResult.participants) {
-                let isInviteV4Sent = false;
-                const participantId = participant.wid._serialized;
-                const statusCode = participant.error ?? 200;
-
-                if (autoSendInviteV4 && statusCode === 403) {
-                    window.Store.ContactCollection.gadd(participant.wid, { silent: true });
-                    const addParticipantResult = await window.Store.GroupInviteV4.sendGroupInviteMessage(
-                        await window.Store.Chat.find(participant.wid),
-                        createGroupResult.wid._serialized,
-                        createGroupResult.subject,
-                        participant.invite_code,
-                        participant.invite_code_exp,
-                        comment,
-                        await window.WWebJS.getProfilePicThumbToBase64(createGroupResult.wid)
-                    );
-                    isInviteV4Sent = window.compareWwebVersions(window.Debug.VERSION, '<', '2.2335.6')
-                        ? addParticipantResult === 'OK'
-                        : addParticipantResult.messageSendResult === 'OK';
+                for (const participant of participants) {
+                    const pWid = window.Store.WidFactory.createWid(participant);
+                    if ((await window.Store.QueryExist(pWid))?.wid)
+                        participantWids.push(pWid);
+                    else failedParticipants.push(participant);
                 }
 
-                participantData[participantId] = {
-                    statusCode: statusCode,
-                    message: addParticipantResultCodes[statusCode] || addParticipantResultCodes.default,
-                    isGroupCreator: participant.type === 'superadmin',
-                    isInviteV4Sent: isInviteV4Sent
-                };
-            }
+                parentGroupId &&
+                    (parentGroupWid =
+                        window.Store.WidFactory.createWid(parentGroupId));
 
-            for (const f of failedParticipants) {
-                participantData[f] = {
-                    statusCode: 404,
-                    message: addParticipantResultCodes[404],
-                    isGroupCreator: false,
-                    isInviteV4Sent: false
-                };
-            }
+                try {
+                    createGroupResult =
+                        await window.Store.GroupUtils.createGroup(
+                            title,
+                            participantWids,
+                            messageTimer,
+                            parentGroupWid
+                        );
+                } catch (err) {
+                    return "CreateGroupError: An unknown error occupied while creating a group";
+                }
 
-            return { title: title, gid: createGroupResult.wid, participants: participantData };
-        }, title, participants, options);
+                for (const participant of createGroupResult.participants) {
+                    let isInviteV4Sent = false;
+                    const participantId = participant.wid._serialized;
+                    const statusCode = participant.error ?? 200;
+
+                    if (autoSendInviteV4 && statusCode === 403) {
+                        window.Store.ContactCollection.gadd(participant.wid, {
+                            silent: true,
+                        });
+                        const addParticipantResult =
+                            await window.Store.GroupInviteV4.sendGroupInviteMessage(
+                                await window.Store.Chat.find(participant.wid),
+                                createGroupResult.wid._serialized,
+                                createGroupResult.subject,
+                                participant.invite_code,
+                                participant.invite_code_exp,
+                                comment,
+                                await window.WWebJS.getProfilePicThumbToBase64(
+                                    createGroupResult.wid
+                                )
+                            );
+                        isInviteV4Sent = window.compareWwebVersions(
+                            window.Debug.VERSION,
+                            "<",
+                            "2.2335.6"
+                        )
+                            ? addParticipantResult === "OK"
+                            : addParticipantResult.messageSendResult === "OK";
+                    }
+
+                    participantData[participantId] = {
+                        statusCode: statusCode,
+                        message:
+                            addParticipantResultCodes[statusCode] ||
+                            addParticipantResultCodes.default,
+                        isGroupCreator: participant.type === "superadmin",
+                        isInviteV4Sent: isInviteV4Sent,
+                    };
+                }
+
+                for (const f of failedParticipants) {
+                    participantData[f] = {
+                        statusCode: 404,
+                        message: addParticipantResultCodes[404],
+                        isGroupCreator: false,
+                        isInviteV4Sent: false,
+                    };
+                }
+
+                return {
+                    title: title,
+                    gid: createGroupResult.wid,
+                    participants: participantData,
+                };
+            },
+            title,
+            participants,
+            options
+        );
     }
 
     /**
@@ -1823,7 +1950,9 @@ class Client extends EventEmitter {
     async getGroupMembershipRequests(groupId) {
         return await this.pupPage.evaluate(async (gropId) => {
             const groupWid = window.Store.WidFactory.createWid(gropId);
-            return await window.Store.MembershipRequestUtils.getMembershipApprovalRequests(groupWid);
+            return await window.Store.MembershipRequestUtils.getMembershipApprovalRequests(
+                groupWid
+            );
         }, groupId);
     }
 
@@ -1849,10 +1978,19 @@ class Client extends EventEmitter {
      * @returns {Promise<Array<MembershipRequestActionResult>>} Returns an array of requester IDs whose membership requests were approved and an error for each requester, if any occurred during the operation. If there are no requests, an empty array will be returned
      */
     async approveGroupMembershipRequests(groupId, options = {}) {
-        return await this.pupPage.evaluate(async (groupId, options) => {
-            const { requesterIds = null, sleep = [250, 500] } = options;
-            return await window.WWebJS.membershipRequestAction(groupId, 'Approve', requesterIds, sleep);
-        }, groupId, options);
+        return await this.pupPage.evaluate(
+            async (groupId, options) => {
+                const { requesterIds = null, sleep = [250, 500] } = options;
+                return await window.WWebJS.membershipRequestAction(
+                    groupId,
+                    "Approve",
+                    requesterIds,
+                    sleep
+                );
+            },
+            groupId,
+            options
+        );
     }
 
     /**
@@ -1862,19 +2000,27 @@ class Client extends EventEmitter {
      * @returns {Promise<Array<MembershipRequestActionResult>>} Returns an array of requester IDs whose membership requests were rejected and an error for each requester, if any occurred during the operation. If there are no requests, an empty array will be returned
      */
     async rejectGroupMembershipRequests(groupId, options = {}) {
-        return await this.pupPage.evaluate(async (groupId, options) => {
-            const { requesterIds = null, sleep = [250, 500] } = options;
-            return await window.WWebJS.membershipRequestAction(groupId, 'Reject', requesterIds, sleep);
-        }, groupId, options);
+        return await this.pupPage.evaluate(
+            async (groupId, options) => {
+                const { requesterIds = null, sleep = [250, 500] } = options;
+                return await window.WWebJS.membershipRequestAction(
+                    groupId,
+                    "Reject",
+                    requesterIds,
+                    sleep
+                );
+            },
+            groupId,
+            options
+        );
     }
-
 
     /**
      * Setting  autoload download audio
      * @param {boolean} flag true/false
      */
     async setAutoDownloadAudio(flag) {
-        await this.pupPage.evaluate(async flag => {
+        await this.pupPage.evaluate(async (flag) => {
             const autoDownload = window.Store.Settings.getAutoDownloadAudio();
             if (autoDownload === flag) {
                 return flag;
@@ -1889,8 +2035,9 @@ class Client extends EventEmitter {
      * @param {boolean} flag true/false
      */
     async setAutoDownloadDocuments(flag) {
-        await this.pupPage.evaluate(async flag => {
-            const autoDownload = window.Store.Settings.getAutoDownloadDocuments();
+        await this.pupPage.evaluate(async (flag) => {
+            const autoDownload =
+                window.Store.Settings.getAutoDownloadDocuments();
             if (autoDownload === flag) {
                 return flag;
             }
@@ -1904,7 +2051,7 @@ class Client extends EventEmitter {
      * @param {boolean} flag true/false
      */
     async setAutoDownloadPhotos(flag) {
-        await this.pupPage.evaluate(async flag => {
+        await this.pupPage.evaluate(async (flag) => {
             const autoDownload = window.Store.Settings.getAutoDownloadPhotos();
             if (autoDownload === flag) {
                 return flag;
@@ -1919,7 +2066,7 @@ class Client extends EventEmitter {
      * @param {boolean} flag true/false
      */
     async setAutoDownloadVideos(flag) {
-        await this.pupPage.evaluate(async flag => {
+        await this.pupPage.evaluate(async (flag) => {
             const autoDownload = window.Store.Settings.getAutoDownloadVideos();
             if (autoDownload === flag) {
                 return flag;
