@@ -3,6 +3,17 @@
 exports.LoadUtils = () => {
     window.WWebJS = {};
 
+    window.WWebJS.forwardMessage = async (chatId, msgId) => {
+        let msg = window.Store.Msg.get(msgId);
+        let chat = window.Store.Chat.get(chatId);
+
+        if (window.compareWwebVersions(window.Debug.VERSION, '>', '2.3000.0')) {
+            return window.Store.ForwardUtils.forwardMessagesToChats([msg], [chat], false);
+        } else {
+            return chat.forwardMessages([msg]);
+        }
+    };
+
     window.WWebJS.sendSeen = async (chatId) => {
         let chat = window.Store.Chat.get(chatId);
         if (chat !== undefined) {
@@ -184,6 +195,15 @@ exports.LoadUtils = () => {
             delete listOptions.list.footer;
         }
 
+        const botOptions = {};
+        if (options.invokedBotWid) {
+            botOptions.messageSecret = window.crypto.getRandomValues(new Uint8Array(32));
+            botOptions.botMessageSecret = await window.Store.BotSecret.genBotMsgSecretFromMsgSecret(botOptions.messageSecret);
+            botOptions.invokedBotWid = window.Store.WidFactory.createWid(options.invokedBotWid);
+            botOptions.botPersonaId = window.Store.BotProfiles.BotProfileCollection.get(options.invokedBotWid).personaId;
+            delete options.invokedBotWid;
+        }
+
         const meUser = window.Store.User.getMaybeMeUser();
         const newId = await window.Store.MsgKey.newId();
         
@@ -221,8 +241,14 @@ exports.LoadUtils = () => {
             ...vcardOptions,
             ...buttonOptions,
             ...listOptions,
+            ...botOptions,
             ...extraOptions
         };
+        
+        // Bot's won't reply if canonicalUrl is set (linking)
+        if (botOptions) {
+            delete message.canonicalUrl;
+        }
 
         await window.Store.SendMessage.addAndSendMsgToChat(chat, message);
         return window.Store.Msg.get(newMsgId._serialized);
@@ -407,6 +433,15 @@ exports.LoadUtils = () => {
         return msg;
     };
 
+    window.WWebJS.getPollVoteModel = (vote) => {
+        const _vote = vote.serialize();
+        if (vote.parentMsgKey) {
+            const msg = window.Store.Msg.get(vote.parentMsgKey);
+            msg && (_vote.parentMessage = window.WWebJS.getMessageModel(msg));
+            return _vote;
+        }
+        return null;
+    };
 
     window.WWebJS.getChatModel = async chat => {
 
@@ -459,7 +494,7 @@ exports.LoadUtils = () => {
 
         // TODO: remove useOldImplementation and its checks once all clients are updated to >= v2.2327.4
         const useOldImplementation
-            = window.WWebJS.compareWwebVersions(window.Debug.VERSION, '<', '2.2327.4');
+            = window.compareWwebVersions(window.Debug.VERSION, '<', '2.2327.4');
 
         res.isMe = useOldImplementation
             ? contact.isMe
@@ -828,7 +863,7 @@ exports.LoadUtils = () => {
                 }];
 
         let rpcResult, resultArgs;
-        const isOldImpl = window.WWebJS.compareWwebVersions(window.Debug.VERSION, '<=', '2.2335.9');
+        const isOldImpl = window.compareWwebVersions(window.Debug.VERSION, '<=', '2.2335.9');
         const data = {
             name: undefined,
             code: undefined,
@@ -973,45 +1008,4 @@ exports.LoadUtils = () => {
         return false;
     };
 
-    /**
-     * Helper function that compares between two WWeb versions. Its purpose is to help the developer to choose the correct code implementation depending on the comparison value and the WWeb version.
-     * @param {string} lOperand The left operand for the WWeb version string to compare with
-     * @param {string} operator The comparison operator
-     * @param {string} rOperand The right operand for the WWeb version string to compare with
-     * @returns {boolean} Boolean value that indicates the result of the comparison
-     */
-    window.WWebJS.compareWwebVersions = (lOperand, operator, rOperand) => {
-        if (!['>', '>=', '<', '<=', '='].includes(operator)) {
-            throw new class _ extends Error {
-                constructor(m) { super(m); this.name = 'CompareWwebVersionsError'; }
-            }('Invalid comparison operator is provided');
-
-        }
-        if (typeof lOperand !== 'string' || typeof rOperand !== 'string') {
-            throw new class _ extends Error {
-                constructor(m) { super(m); this.name = 'CompareWwebVersionsError'; }
-            }('A non-string WWeb version type is provided');
-        }
-
-        lOperand = lOperand.replace(/-beta$/, '');
-        rOperand = rOperand.replace(/-beta$/, '');
-
-        while (lOperand.length !== rOperand.length) {
-            lOperand.length > rOperand.length
-                ? rOperand = rOperand.concat('0')
-                : lOperand = lOperand.concat('0');
-        }
-
-        lOperand = Number(lOperand.replace(/\./g, ''));
-        rOperand = Number(rOperand.replace(/\./g, ''));
-
-        return (
-            operator === '>' ? lOperand > rOperand :
-                operator === '>=' ? lOperand >= rOperand :
-                    operator === '<' ? lOperand < rOperand :
-                        operator === '<=' ? lOperand <= rOperand :
-                            operator === '=' ? lOperand === rOperand :
-                                false
-        );
-    };
 };
