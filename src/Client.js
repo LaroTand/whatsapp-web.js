@@ -1090,7 +1090,7 @@ class Client extends EventEmitter {
                         console.log(err);
                     })
             )
-            .then(() => withTimeout(15000, messagePromise())) // Send the message with a timeout of 15 seconds
+            .then(() => withTimeout(8000, messagePromise())) // Send the message with a timeout of 8 seconds
             .then(() => {
                 if (this.logMessages) {
                     const now = new Date();
